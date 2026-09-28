@@ -2,6 +2,8 @@ from fastapi import FastAPI, Depends
 from core.dependencies import get_current_user
 from models.user import User
 from routes.auth import router as auth_router
+from routes.centres import router as centres_router
+from routes.tests import router as tests_router
 
 
 app = FastAPI(
@@ -11,7 +13,8 @@ app = FastAPI(
 
 
 app.include_router(auth_router)
-
+app.include_router(centres_router)
+app.include_router(tests_router)
 
 @app.get("/")
 def root():
@@ -28,3 +31,4 @@ def get_me(
         "name": current_user.name,
         "email": current_user.email,
     }
+
