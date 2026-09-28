@@ -4,7 +4,7 @@ from models.user import User
 from routes.auth import router as auth_router
 from routes.centres import router as centres_router
 from routes.tests import router as tests_router
-
+from routes.bookings import router as bookings_router
 
 app = FastAPI(
     title="Diagnostic Booking API",
@@ -15,6 +15,7 @@ app = FastAPI(
 app.include_router(auth_router)
 app.include_router(centres_router)
 app.include_router(tests_router)
+app.include_router(bookings_router)
 
 @app.get("/")
 def root():
