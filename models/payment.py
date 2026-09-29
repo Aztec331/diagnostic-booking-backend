@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, ForeignKey, Numeric, String
+from sqlalchemy import Column, Integer, ForeignKey, Numeric, String, UniqueConstraint
+
 from database import Base
 
 
@@ -19,4 +20,11 @@ class Payment(Base):
         String,
         nullable=False,
         default="PENDING"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "booking_id",
+            name="uq_payment_booking"
+        ),
     )

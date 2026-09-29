@@ -5,6 +5,7 @@ from routes.auth import router as auth_router
 from routes.centres import router as centres_router
 from routes.tests import router as tests_router
 from routes.bookings import router as bookings_router
+from routes.payments import router as payments_router
 
 app = FastAPI(
     title="Diagnostic Booking API",
@@ -16,6 +17,7 @@ app.include_router(auth_router)
 app.include_router(centres_router)
 app.include_router(tests_router)
 app.include_router(bookings_router)
+app.include_router(payments_router)
 
 @app.get("/")
 def root():
