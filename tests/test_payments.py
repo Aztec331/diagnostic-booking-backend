@@ -1,25 +1,7 @@
-from fastapi.testclient import TestClient
-
 import uuid
 
-from main import app
 
-
-client = TestClient(app)
-
-
-def get_token(email, password):
-    response = client.post(
-        "/api/auth/login",
-        json={
-            "email": email,
-            "password": password,
-        },
-    )
-    return response.json()["access_token"]
-
-
-def test_create_payment_without_token():
+def test_create_payment_without_token(client):
     response = client.post(
         "/api/payments/",
         json={
@@ -30,12 +12,12 @@ def test_create_payment_without_token():
     assert response.status_code == 401
 
 
-def test_create_payment_invalid_booking():
-    token = get_token("aditya@test.com", "password123")
+def test_create_payment_invalid_booking(client, user_factory):
+    user = user_factory()
 
     response = client.post(
         "/api/payments/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
             "booking_id": 999999,
         },
@@ -44,16 +26,17 @@ def test_create_payment_invalid_booking():
     assert response.status_code == 404
 
 
-def test_create_payment_for_another_users_booking():
-    user1_token = get_token("aditya@test.com", "password123")
-    user2_token = get_token("rahul@example.com", "password123")
+def test_create_payment_for_another_users_booking(client, user_factory, catalogue_factory):
+    user1 = user_factory("First User")
+    user2 = user_factory("Second User")
+    catalogue = catalogue_factory()
 
     booking_response = client.post(
         "/api/bookings/",
-        headers={"Authorization": f"Bearer {user2_token}"},
+        headers={"Authorization": f"Bearer {user2['token']}"},
         json={
-            "centre_id": 5,
-            "test_id": 5,
+            "centre_id": catalogue["centre_id"],
+            "test_id": catalogue["test_id"],
             "appointment_at": f"2030-02-01T10:00:{uuid.uuid4().int % 60:02d}",
         },
     )
@@ -64,7 +47,7 @@ def test_create_payment_for_another_users_booking():
 
     response = client.post(
         "/api/payments/",
-        headers={"Authorization": f"Bearer {user1_token}"},
+        headers={"Authorization": f"Bearer {user1['token']}"},
         json={
             "booking_id": booking_id,
         },
@@ -73,15 +56,16 @@ def test_create_payment_for_another_users_booking():
     assert response.status_code == 404
 
 
-def test_create_payment():
-    token = get_token("aditya@test.com", "password123")
+def test_create_payment(client, user_factory, catalogue_factory):
+    user = user_factory()
+    catalogue = catalogue_factory(price=550.0)
 
     booking_response = client.post(
         "/api/bookings/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
-            "centre_id": 6,
-            "test_id": 6,
+            "centre_id": catalogue["centre_id"],
+            "test_id": catalogue["test_id"],
             "appointment_at": f"2030-02-02T10:00:{uuid.uuid4().int % 60:02d}",
         },
     )
@@ -92,7 +76,7 @@ def test_create_payment():
 
     response = client.post(
         "/api/payments/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
             "booking_id": booking_id,
         },
@@ -103,16 +87,54 @@ def test_create_payment():
     assert response.json()["amount"] == 550.0
     assert response.json()["status"] == "PENDING"
 
-
-def test_duplicate_payment():
-    token = get_token("aditya@test.com", "password123")
+def test_cannot_create_payment_for_cancelled_booking(client, user_factory, catalogue_factory):
+    user = user_factory()
+    catalogue = catalogue_factory()
 
     booking_response = client.post(
         "/api/bookings/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
-            "centre_id": 1,
-            "test_id": 1,
+            "centre_id": catalogue["centre_id"],
+            "test_id": catalogue["test_id"],
+            "appointment_at": f"2030-02-07T10:00:{uuid.uuid4().int % 60:02d}",
+        },
+    )
+
+    assert booking_response.status_code == 201
+
+    booking_id = booking_response.json()["id"]
+
+    cancel_response = client.patch(
+        f"/api/bookings/{booking_id}/cancel",
+        headers={"Authorization": f"Bearer {user['token']}"},
+    )
+
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["status"] == "CANCELLED"
+
+    payment_response = client.post(
+        "/api/payments/",
+        headers={"Authorization": f"Bearer {user['token']}"},
+        json={
+            "booking_id": booking_id,
+        },
+    )
+
+    assert payment_response.status_code == 409
+    assert payment_response.json()["detail"] == "Only pending bookings can be paid"
+
+
+def test_duplicate_payment(client, user_factory, catalogue_factory):
+    user = user_factory()
+    catalogue = catalogue_factory()
+
+    booking_response = client.post(
+        "/api/bookings/",
+        headers={"Authorization": f"Bearer {user['token']}"},
+        json={
+            "centre_id": catalogue["centre_id"],
+            "test_id": catalogue["test_id"],
             "appointment_at": f"2030-02-03T10:00:{uuid.uuid4().int % 60:02d}",
         },
     )
@@ -123,7 +145,7 @@ def test_duplicate_payment():
 
     first_response = client.post(
         "/api/payments/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
             "booking_id": booking_id,
         },
@@ -133,7 +155,7 @@ def test_duplicate_payment():
 
     second_response = client.post(
         "/api/payments/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
             "booking_id": booking_id,
         },
@@ -142,7 +164,7 @@ def test_duplicate_payment():
     assert second_response.status_code == 409
 
 
-def test_webhook_invalid_payment():
+def test_webhook_invalid_payment(client):
     response = client.post(
         "/api/payments/webhook/",
         json={
@@ -155,15 +177,16 @@ def test_webhook_invalid_payment():
     assert response.status_code == 404
 
 
-def test_webhook_invalid_event_type():
-    token = get_token("aditya@test.com", "password123")
+def test_webhook_invalid_event_type(client, user_factory, catalogue_factory):
+    user = user_factory()
+    catalogue = catalogue_factory()
 
     booking_response = client.post(
         "/api/bookings/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
-            "centre_id": 2,
-            "test_id": 2,
+            "centre_id": catalogue["centre_id"],
+            "test_id": catalogue["test_id"],
             "appointment_at": f"2030-02-04T10:00:{uuid.uuid4().int % 60:02d}",
         },
     )
@@ -174,7 +197,7 @@ def test_webhook_invalid_event_type():
 
     payment_response = client.post(
         "/api/payments/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
             "booking_id": booking_id,
         },
@@ -196,15 +219,16 @@ def test_webhook_invalid_event_type():
     assert response.status_code == 400
 
 
-def test_success_webhook():
-    token = get_token("aditya@test.com", "password123")
+def test_success_webhook(client, user_factory, catalogue_factory):
+    user = user_factory()
+    catalogue = catalogue_factory()
 
     booking_response = client.post(
         "/api/bookings/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
-            "centre_id": 3,
-            "test_id": 3,
+            "centre_id": catalogue["centre_id"],
+            "test_id": catalogue["test_id"],
             "appointment_at": f"2030-02-05T10:00:{uuid.uuid4().int % 60:02d}",
         },
     )
@@ -215,7 +239,7 @@ def test_success_webhook():
 
     payment_response = client.post(
         "/api/payments/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
             "booking_id": booking_id,
         },
@@ -239,15 +263,16 @@ def test_success_webhook():
     assert response.json()["booking_status"] == "CONFIRMED"
 
 
-def test_duplicate_webhook_event():
-    token = get_token("aditya@test.com", "password123")
+def test_duplicate_webhook_event(client, user_factory, catalogue_factory):
+    user = user_factory()
+    catalogue = catalogue_factory()
 
     booking_response = client.post(
         "/api/bookings/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
-            "centre_id": 4,
-            "test_id": 4,
+            "centre_id": catalogue["centre_id"],
+            "test_id": catalogue["test_id"],
             "appointment_at": f"2030-02-06T10:00:{uuid.uuid4().int % 60:02d}",
         },
     )
@@ -258,7 +283,7 @@ def test_duplicate_webhook_event():
 
     payment_response = client.post(
         "/api/payments/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
             "booking_id": booking_id,
         },

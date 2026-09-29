@@ -44,6 +44,12 @@ def create_new_payment(
             detail="Booking not found",
         )
 
+    if booking.status != "PENDING":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending bookings can be paid",
+        )
+
     existing_payment = get_payment_by_booking(
     db=db,
     booking_id=booking.id,

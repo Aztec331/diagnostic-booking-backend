@@ -1,12 +1,7 @@
-from fastapi.testclient import TestClient
 import uuid
-from main import app
 
 
-client = TestClient(app)
-
-
-def test_signup():
+def test_signup(client):
     email = f"testuser_{uuid.uuid4()}@example.com"
 
     response = client.post(
@@ -22,12 +17,13 @@ def test_signup():
     assert response.json()["email"] == email
 
 
-def test_duplicate_signup():
+def test_duplicate_signup(client):
+    email = f"duplicate_{uuid.uuid4()}@example.com"
     client.post(
         "/api/auth/signup",
         json={
             "name": "Test User",
-            "email": "duplicate@example.com",
+            "email": email,
             "password": "password123",
         },
     )
@@ -36,7 +32,7 @@ def test_duplicate_signup():
         "/api/auth/signup",
         json={
             "name": "Another User",
-            "email": "duplicate@example.com",
+            "email": email,
             "password": "password123",
         },
     )
@@ -44,12 +40,13 @@ def test_duplicate_signup():
     assert response.status_code == 409
 
 
-def test_login():
+def test_login(client):
+    email = f"login_{uuid.uuid4()}@example.com"
     client.post(
         "/api/auth/signup",
         json={
             "name": "Login User",
-            "email": "login@example.com",
+            "email": email,
             "password": "password123",
         },
     )
@@ -57,7 +54,7 @@ def test_login():
     response = client.post(
         "/api/auth/login",
         json={
-            "email": "login@example.com",
+            "email": email,
             "password": "password123",
         },
     )
@@ -66,12 +63,13 @@ def test_login():
     assert "access_token" in response.json()
 
 
-def test_login_wrong_password():
+def test_login_wrong_password(client):
+    email = f"wrongpass_{uuid.uuid4()}@example.com"
     client.post(
         "/api/auth/signup",
         json={
             "name": "Wrong Password User",
-            "email": "wrongpass@example.com",
+            "email": email,
             "password": "password123",
         },
     )
@@ -79,7 +77,7 @@ def test_login_wrong_password():
     response = client.post(
         "/api/auth/login",
         json={
-            "email": "wrongpass@example.com",
+            "email": email,
             "password": "wrongpassword",
         },
     )
@@ -87,7 +85,7 @@ def test_login_wrong_password():
     assert response.status_code == 401
 
 
-def test_me_without_token():
+def test_me_without_token(client):
     response = client.get("/api/auth/me")
 
     assert response.status_code == 401

@@ -1,30 +1,12 @@
-from fastapi.testclient import TestClient
-
 import uuid
 
-from main import app
 
-
-client = TestClient(app)
-
-
-def get_token(email, password):
-    response = client.post(
-        "/api/auth/login",
-        json={
-            "email": email,
-            "password": password,
-        },
-    )
-    return response.json()["access_token"]
-
-
-def test_create_booking_without_token():
+def test_create_booking_without_token(client):
     response = client.post(
         "/api/bookings/",
         json={
-            "centre_id": 1,
-            "test_id": 1,
+            "centre_id": 999999,
+            "test_id": 999999,
             "appointment_at": "2030-01-10T10:00:00",
         },
     )
@@ -32,12 +14,12 @@ def test_create_booking_without_token():
     assert response.status_code == 401
 
 
-def test_create_booking_invalid_centre_test():
-    token = get_token("aditya@test.com", "password123")
+def test_create_booking_invalid_centre_test(client, user_factory):
+    user = user_factory()
 
     response = client.post(
         "/api/bookings/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
             "centre_id": 999,
             "test_id": 999,
@@ -48,39 +30,41 @@ def test_create_booking_invalid_centre_test():
     assert response.status_code == 404
 
 
-def test_create_booking():
-    token = get_token("aditya@test.com", "password123")
+def test_create_booking(client, user_factory, catalogue_factory):
+    user = user_factory()
+    catalogue = catalogue_factory(price=800.0)
 
     response = client.post(
         "/api/bookings/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
-            "centre_id": 2,
-            "test_id": 2,
+            "centre_id": catalogue["centre_id"],
+            "test_id": catalogue["test_id"],
             "appointment_at": f"2030-01-01T11:00:{uuid.uuid4().int % 60:02d}",
         },
     )
 
     assert response.status_code == 201
-    assert response.json()["user_id"] == 1
-    assert response.json()["centre_id"] == 2
-    assert response.json()["test_id"] == 2
+    assert response.json()["user_id"] == user["id"]
+    assert response.json()["centre_id"] == catalogue["centre_id"]
+    assert response.json()["test_id"] == catalogue["test_id"]
     assert response.json()["amount"] == 800.0
     assert response.json()["status"] == "PENDING"
 
 
-def test_duplicate_booking():
-    token = get_token("aditya@test.com", "password123")
+def test_duplicate_booking(client, user_factory, catalogue_factory):
+    user = user_factory()
+    catalogue = catalogue_factory()
 
     booking = {
-        "centre_id": 3,
-        "test_id": 3,
+        "centre_id": catalogue["centre_id"],
+        "test_id": catalogue["test_id"],
         "appointment_at": f"2030-01-02T10:00:{uuid.uuid4().int % 60:02d}",
     }
 
     first_response = client.post(
         "/api/bookings/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json=booking,
     )
 
@@ -88,23 +72,24 @@ def test_duplicate_booking():
 
     second_response = client.post(
         "/api/bookings/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json=booking,
     )
 
     assert second_response.status_code == 409
 
 
-def test_get_booking_of_another_user():
-    user1_token = get_token("aditya@test.com", "password123")
-    user2_token = get_token("rahul@example.com", "password123")
+def test_get_booking_of_another_user(client, user_factory, catalogue_factory):
+    user1 = user_factory("First User")
+    user2 = user_factory("Second User")
+    catalogue = catalogue_factory()
 
     booking_response = client.post(
         "/api/bookings/",
-        headers={"Authorization": f"Bearer {user2_token}"},
+        headers={"Authorization": f"Bearer {user2['token']}"},
         json={
-            "centre_id": 4,
-            "test_id": 4,
+            "centre_id": catalogue["centre_id"],
+            "test_id": catalogue["test_id"],
             "appointment_at": f"2030-01-03T10:00:{uuid.uuid4().int % 60:02d}",
         },
     )
@@ -115,21 +100,22 @@ def test_get_booking_of_another_user():
 
     response = client.get(
         f"/api/bookings/{booking_id}",
-        headers={"Authorization": f"Bearer {user1_token}"},
+        headers={"Authorization": f"Bearer {user1['token']}"},
     )
 
     assert response.status_code == 404
 
 
-def test_cancel_failed_booking():
-    token = get_token("aditya@test.com", "password123")
+def test_cancel_failed_booking(client, user_factory, catalogue_factory):
+    user = user_factory()
+    catalogue = catalogue_factory()
 
     booking_response = client.post(
         "/api/bookings/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
-            "centre_id": 5,
-            "test_id": 5,
+            "centre_id": catalogue["centre_id"],
+            "test_id": catalogue["test_id"],
             "appointment_at": f"2030-01-04T10:00:{uuid.uuid4().int % 60:02d}",
         },
     )
@@ -140,7 +126,7 @@ def test_cancel_failed_booking():
 
     response = client.post(
         "/api/payments/",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
         json={
             "booking_id": booking_id,
         },
@@ -163,13 +149,13 @@ def test_cancel_failed_booking():
 
     response = client.patch(
         f"/api/bookings/{booking_id}/cancel",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {user['token']}"},
     )
 
     assert response.status_code == 409
 
 
-def test_cancel_without_token():
+def test_cancel_without_token(client):
     response = client.patch("/api/bookings/999999/cancel")
 
     assert response.status_code == 401
