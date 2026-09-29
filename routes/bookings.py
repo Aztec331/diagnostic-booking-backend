@@ -119,3 +119,48 @@ def get_my_booking(
         "amount": booking.amount,
         "status": booking.status,
     }
+
+@router.patch("/{booking_id}/cancel")
+def cancel_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    booking = get_booking_by_id(
+        db=db,
+        booking_id=booking_id,
+    )
+
+    if not booking:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking not found",
+        )
+
+    if booking.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking not found",
+        )
+
+    if booking.status == "CANCELLED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Booking is already cancelled",
+        )
+
+    if booking.status == "FAILED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Failed booking cannot be cancelled",
+        )
+
+    booking.status = "CANCELLED"
+
+    db.commit()
+    db.refresh(booking)
+
+    return {
+        "id": booking.id,
+        "status": booking.status,
+    }
